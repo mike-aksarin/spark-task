@@ -11,29 +11,24 @@ object TopProductsApp extends GenericApp {
 
   def appName = "top-products-app"
 
-  /** Top size */
-  def limit: Int = 10
-
   def execute(inputPath: String, outputPath: String) = withSpark { spark =>
     val events = spark.read
       .option("header", "true")
       .csv(inputPath)
 
     events.createTempView("events")
-
-    val eventTime = "unix_timestamp(cast(eventTime AS TIMESTAMP))"
-
-    val productWindow =
-      s"""OVER (PARTITION BY userId, product ORDER BY $eventTime
-          RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"""
+    spark.udf.register("session_start", new SessionStartTime)
 
     val topProducts = spark.sql(
-      s"""SELECT DISTINCT
-          product,
-          max($eventTime) $productWindow - min($eventTime) $productWindow AS durationInSeconds
-        FROM events
+      """SELECT product,
+        sum(unix_timestamp(cast(eventTime AS TIMESTAMP)) - unix_timestamp(sessionStartTime))
+          AS durationInSeconds
+        FROM (SELECT *, session_start(product, cast(eventTime AS TIMESTAMP))
+          OVER (PARTITION BY userId ORDER BY cast(eventTime AS TIMESTAMP))
+          AS sessionStartTime FROM events)
+        GROUP BY product
         ORDER BY durationInSeconds DESC
-        LIMIT $limit""")
+        LIMIT 10""")
       .cache()
 
     topProducts.write
