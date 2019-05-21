@@ -4,14 +4,20 @@ import java.util.UUID
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.expressions.{MutableAggregationBuffer, UserDefinedAggregateFunction}
-import org.apache.spark.sql.types.{DataType, LongType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DataType, StringType, StructType, TimestampType}
 
-/** User defined aggregate function to generate group id for the rows aggregated
+/** User defined aggregate function to generate session id.
+  * The session is assumed to be a period when next events comes
+  * after the previous event not later than after a timeout given.
+  * The function itself take one parameter:
+  *
+  * - `eventTime: Timestamp` The event time field to determine the session boundaries.
+  *
+  * Function class constructor takes a `timeout` parameter to specify
+  * maximum user inactivity period.
+  * @param timeout session inactivity timeout in seconds
   */
-class SessionId extends UserDefinedAggregateFunction {
-
-  /** Window timeout in seconds */
-  def timeout: Long = 5 * 60
+class SessionId(timeout: Long) extends UserDefinedAggregateFunction {
 
   override val inputSchema: StructType = new StructType()
     .add("eventTime", TimestampType)
@@ -36,7 +42,7 @@ class SessionId extends UserDefinedAggregateFunction {
     val eventTime = input.getAs[Timestamp](eventTimeIdx)
     if (!buffer.isNullAt(prevTimeIdx)) {
       val prevTime = buffer.getAs[Timestamp](prevTimeIdx)
-      if (!sameSession(prevTime, eventTime, timeout)) {
+      if (!sameSession(prevTime, eventTime)) {
         buffer.update(sessionIdx, nextId())
       }
     }
@@ -48,7 +54,7 @@ class SessionId extends UserDefinedAggregateFunction {
       val buffer2Time = buffer2.getAs[Timestamp](prevTimeIdx)
       if (!buffer1.isNullAt(prevTimeIdx)) {
         val buffer1Time = buffer1.getAs[Timestamp](prevTimeIdx)
-        if (!sameSession(buffer1Time, buffer2Time, timeout)) {
+        if (!sameSession(buffer1Time, buffer2Time)) {
           buffer1.update(sessionIdx, buffer2.getAs[String](sessionIdx))
         }
       }
@@ -58,7 +64,7 @@ class SessionId extends UserDefinedAggregateFunction {
 
   override def evaluate(buffer: Row): String = buffer.getAs[String](sessionIdx)
 
-  def sameSession(prevTime: Timestamp, curTime: Timestamp, timeout: Long): Boolean = {
+  def sameSession(prevTime: Timestamp, curTime: Timestamp): Boolean = {
     Math.abs(curTime.getTime - prevTime.getTime) <= timeout * 1000
   }
 

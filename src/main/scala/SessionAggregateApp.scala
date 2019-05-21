@@ -15,6 +15,9 @@ object SessionAggregateApp extends GenericApp {
 
   def appName = "session-aggregate-app"
 
+  /** Session inactivity timeout in seconds */
+  def timeout: Int = 5 * 60
+
   def execute(inputPath: String, outputPath: String) = withSpark { spark =>
     val events = spark.read
       .option("header", "true")
@@ -27,7 +30,7 @@ object SessionAggregateApp extends GenericApp {
 
     val sessionWindow = Window.partitionBy("sessionId")
 
-    val sessionId = new SessionId
+    val sessionId = new SessionId(timeout)
 
     val sessions = events
       .withColumn("sessionId", sessionId(col(Event.eventTime)).over(timeWindow))

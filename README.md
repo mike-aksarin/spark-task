@@ -51,18 +51,18 @@ Enrich incoming data with user sessions. *Definition of a session:* for each use
 
 Implement it using:
  * Sql window functions.
- *(Solved by [SessionSqlApp](src/main/scala/SessionSqlApp.scala).)*
+ *(Solved by [SessionSqlApp](src/main/scala/SessionSqlApp.scala))*
  * Spark aggregator.
- *(Solved by [SessionAggregateApp](src/main/scala/SessionAggregateApp.scala).)*
+ *(Solved by [SessionAggregateApp](src/main/scala/SessionAggregateApp.scala))*
 
 ### Task #2
 Compute the following statistics:
 * For each category find median session duration. 
-*(Solved by [StatisticsSqlApp](src/main/scala/StatisticsSqlApp.scala).)*
+*(Solved by [StatisticsSqlApp](src/main/scala/StatisticsSqlApp.scala))*
 * For each category find # of unique users spending less than 1 min, 1 to 5 mins and more than 5 mins.
-*(Solved by [StatisticsSqlApp](src/main/scala/StatisticsSqlApp.scala).)*
+*(Solved by [StatisticsSqlApp](src/main/scala/StatisticsSqlApp.scala))*
 * For each category find top 10 products ranked by time spent by users on product pages — this may require different type of sessions. For this particular task, session lasts until the user is looking at particular product. When particular user switches to another product the new session starts.
-*(Solved by [TopProductsApp](src/main/scala/TopProductsApp.scala).)*
+*(Solved by [TopProductsApp](src/main/scala/TopProductsApp.scala))*
 
 ### General notes
 Ideally tasks should be implemented using pure SQL on top of Spark DataFrame API.

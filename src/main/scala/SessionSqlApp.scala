@@ -11,13 +11,16 @@ object SessionSqlApp extends GenericApp {
 
   def appName = "session-sql-app"
 
+  /** Session inactivity timeout in seconds */
+  def timeout: Int = 5 * 60
+
   def execute(inputPath: String, outputPath: String) = withSpark { spark =>
     val events = spark.read
       .option("header", "true")
       .csv(inputPath)
 
     events.createTempView("events")
-    spark.udf.register("session_id", new SessionId)
+    spark.udf.register("session_id", new SessionId(timeout))
 
     val sessions = spark.sql(
       s"""SELECT *,
