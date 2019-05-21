@@ -36,8 +36,8 @@ See the example at [data/example.csv](data/example.csv).
 
 ## Sessions Input
 
- [StatisticsSqlApp](src/main/scala/StatisticsSqlApp.scala) results of
-  uses [SessionAggregateApp](src/main/scala/SessionAggregateApp.scala) or [SessionSqlApp](src/main/scala/SessionSqlApp.scala) as an input and should be executed after one of these applications.
+ [StatisticsSqlApp](src/main/scala/StatisticsSqlApp.scala) 
+  uses results of [SessionAggregateApp](src/main/scala/SessionAggregateApp.scala) or [SessionSqlApp](src/main/scala/SessionSqlApp.scala) as an input and should be executed after one of these applications.
 
 # Application Business Logic
 
