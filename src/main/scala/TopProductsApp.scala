@@ -14,22 +14,40 @@ object TopProductsApp extends GenericApp {
   def execute(inputPath: String, outputPath: String) = withSpark { spark =>
     val events = spark.read
       .option("header", "true")
+      .schema(Event.schema)
       .csv(inputPath)
 
     events.createTempView("events")
-    spark.udf.register("session_start", new SessionStartTime)
+    spark.udf.register("session_id", new ContinuousSessionId)
 
-    val topProducts = spark.sql(
-      """SELECT product,
-        sum(unix_timestamp(cast(eventTime AS TIMESTAMP)) - unix_timestamp(sessionStartTime))
-          AS durationInSeconds
-        FROM (SELECT *, session_start(product, cast(eventTime AS TIMESTAMP))
-          OVER (PARTITION BY userId ORDER BY cast(eventTime AS TIMESTAMP))
-          AS sessionStartTime FROM events)
-        GROUP BY product
-        ORDER BY durationInSeconds DESC
-        LIMIT 10""")
-      .cache()
+    val eventsWithSessions = spark.sql("""SELECT
+      userId, category, product, eventTime,
+      session_id(product) OVER (PARTITION BY userId ORDER BY eventTime) AS sessionId
+      FROM events""")
+
+    eventsWithSessions.createTempView("eventsWithSessions")
+
+    val sessions = spark.sql("""SELECT userId, category, product, sessionId,
+        unix_timestamp(max(eventTime)) - unix_timestamp(min(eventTime)) as duration
+      FROM eventsWithSessions GROUP BY userId, category, product, sessionId""")
+
+    sessions.createTempView("sessions")
+
+    val productDurations = spark.sql("""SELECT category, product,
+        sum(duration) as sumDurationInSeconds
+      FROM sessions GROUP BY category, product""")
+
+    productDurations.createTempView("productDurations")
+
+    val productRank = spark.sql("""SELECT category, product, sumDurationInSeconds,
+      dense_rank() OVER (PARTITION BY category ORDER BY sumDurationInSeconds DESC) AS rank
+      FROM productDurations""")
+
+    productRank.createTempView("productRank")
+
+    val topProducts = spark.sql("""SELECT
+        category, product, sumDurationInSeconds, rank
+      FROM productRank WHERE rank <= 10""").cache()
 
     topProducts.write
       .option("header", "true")
