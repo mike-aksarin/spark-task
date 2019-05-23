@@ -30,7 +30,7 @@ object SessionAggregateApp extends GenericApp {
 
     val sessionWindow = Window.partitionBy("sessionId")
 
-    val sessionId = new SessionId(timeout)
+    val sessionId = new TimeoutSessionId(timeout)
 
     val sessions = events
       .withColumn("sessionId", sessionId(col(Event.eventTime)).over(timeWindow))

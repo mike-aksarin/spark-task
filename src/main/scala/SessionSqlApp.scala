@@ -17,19 +17,19 @@ object SessionSqlApp extends GenericApp {
   def execute(inputPath: String, outputPath: String) = withSpark { spark =>
     val events = spark.read
       .option("header", "true")
+      .schema(Event.schema)
       .csv(inputPath)
 
     events.createTempView("events")
-    spark.udf.register("session_id", new SessionId(timeout))
+    spark.udf.register("session_id", new TimeoutSessionId(timeout))
 
-    val sessions = spark.sql(
-      s"""SELECT *,
-      min(cast(eventTime AS TIMESTAMP)) OVER(PARTITION BY sessionId) AS sessionStartTime,
-      max(cast(eventTime AS TIMESTAMP)) OVER(PARTITION BY sessionId) AS sessionEndTime
-      FROM (SELECT *, session_id(cast(eventTime AS TIMESTAMP)) OVER (PARTITION BY userId, category
-              ORDER BY cast(eventTime AS TIMESTAMP)) AS sessionId
+    val sessions = spark.sql(s"""SELECT *,
+      min(eventTime) OVER(PARTITION BY sessionId) AS sessionStartTime,
+      max(eventTime) OVER(PARTITION BY sessionId) AS sessionEndTime
+      FROM (SELECT *, session_id(eventTime) OVER (PARTITION BY userId, category
+            ORDER BY eventTime) AS sessionId
             FROM events)
-      ORDER BY cast(eventTime AS TIMESTAMP)""")
+      ORDER BY eventTime""")
       .cache()
 
     sessions.write

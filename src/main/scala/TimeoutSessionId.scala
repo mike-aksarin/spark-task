@@ -1,6 +1,7 @@
 
 import java.sql.Timestamp
 import java.util.UUID
+import java.util.logging.Logger
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.expressions.{MutableAggregationBuffer, UserDefinedAggregateFunction}
@@ -9,6 +10,7 @@ import org.apache.spark.sql.types.{DataType, StringType, StructType, TimestampTy
 /** User defined aggregate function to generate session id.
   * The session is assumed to be a period when next events comes
   * after the previous event not later than after a timeout given.
+  * Works properly for `UNBOUNDED PRECEDING AND CURRENT ROW` window only.
   * The function itself take one parameter:
   *
   * - `eventTime: Timestamp` The event time field to determine the session boundaries.
@@ -17,7 +19,9 @@ import org.apache.spark.sql.types.{DataType, StringType, StructType, TimestampTy
   * maximum user inactivity period.
   * @param timeout session inactivity timeout in seconds
   */
-class SessionId(timeout: Long) extends UserDefinedAggregateFunction {
+class TimeoutSessionId(timeout: Long) extends UserDefinedAggregateFunction {
+
+  def log = Logger.getLogger("SESSION_ID")
 
   override val inputSchema: StructType = new StructType()
     .add("eventTime", TimestampType)
@@ -32,37 +36,39 @@ class SessionId(timeout: Long) extends UserDefinedAggregateFunction {
 
   override def dataType: DataType = StringType
 
-  override def deterministic: Boolean = false
-
   override def initialize(buffer: MutableAggregationBuffer): Unit = {
-    buffer.update(sessionIdx, nextId())
+    val sessionId = nextId()
+    buffer.update(sessionIdx, sessionId)
+    log.info(s"INITIALIZE: $sessionId")
   }
 
   override def update(buffer: MutableAggregationBuffer, input: Row): Unit = {
-    val eventTime = input.getAs[Timestamp](eventTimeIdx)
+    val eventTime = input.getTimestamp(eventTimeIdx)
     if (!buffer.isNullAt(prevTimeIdx)) {
-      val prevTime = buffer.getAs[Timestamp](prevTimeIdx)
+      val prevTime = buffer.getTimestamp(prevTimeIdx)
+      log.info(s"UPDATE by $eventTime, prevTime is $prevTime, prevSession is ${buffer.getString(sessionIdx)}")
       if (!sameSession(prevTime, eventTime)) {
-        buffer.update(sessionIdx, nextId())
+        val sessionId = nextId()
+        buffer.update(sessionIdx, sessionId)
+        log.info(s"NEW SESSION by $eventTime, prevTime is $prevTime, $sessionId")
       }
     }
     buffer.update(prevTimeIdx, eventTime)
   }
 
   override def merge(buffer1: MutableAggregationBuffer, buffer2: Row): Unit = {
-    if (!buffer2.isNullAt(prevTimeIdx)) {
-      val buffer2Time = buffer2.getAs[Timestamp](prevTimeIdx)
-      if (!buffer1.isNullAt(prevTimeIdx)) {
-        val buffer1Time = buffer1.getAs[Timestamp](prevTimeIdx)
-        if (!sameSession(buffer1Time, buffer2Time)) {
-          buffer1.update(sessionIdx, buffer2.getAs[String](sessionIdx))
-        }
-      }
-      buffer1.update(prevTimeIdx, buffer2Time)
-    }
+    throw new Error(s"Merge should not be called! " +
+                    s"${getClass.getSimpleName} should be used only as a window function")
   }
 
-  override def evaluate(buffer: Row): String = buffer.getAs[String](sessionIdx)
+  /** No need to call `evaluate` multiple times if no update occurred */
+  override def deterministic: Boolean = true
+
+  override def evaluate(buffer: Row): String = {
+    val sessionId = buffer.getString(sessionIdx)
+    log.info(s"EVALUATE: $sessionId")
+    sessionId
+  }
 
   def sameSession(prevTime: Timestamp, curTime: Timestamp): Boolean = {
     Math.abs(curTime.getTime - prevTime.getTime) <= timeout * 1000
