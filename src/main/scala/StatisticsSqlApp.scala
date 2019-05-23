@@ -11,24 +11,52 @@ object StatisticsSqlApp extends GenericApp {
   def appName = "statistics-sql-app"
 
   def execute(inputPath: String, outputPath: String) = withSpark { spark =>
-    val sessions = spark.read
+    val eventsWithSessions = spark.read
       .option("header", "true")
       .csv(inputPath)
 
+    eventsWithSessions.createTempView("eventsWithSessions")
+
+    val eventsWithSessionDurations = spark.sql("""SELECT
+        userId, category, sessionId,
+        unix_timestamp(cast(sessionEndTime AS TIMESTAMP)) -
+        unix_timestamp(cast(sessionStartTime AS TIMESTAMP)) AS sessionDuration
+      FROM eventsWithSessions""")
+
+    eventsWithSessionDurations.createTempView("eventsWithSessionDurations")
+
+    val sessions = spark.sql("""SELECT userId, category, sessionDuration
+    FROM eventsWithSessionDurations GROUP BY userId, category, sessionId, sessionDuration""")
+
     sessions.createTempView("sessions")
 
-    val statistics = spark.sql(
-      s"""select category,
-        percentile(sessionDuration, 0.5) / 60 AS medianSessionDurationInMinutes,
-        count(DISTINCT CASE WHEN sessionDuration < 60 THEN userId ELSE NULL END) AS usersSpendingLessThan1Min,
-        count(DISTINCT CASE WHEN sessionDuration BETWEEN 60 and 300 THEN userId ELSE NULL END) AS usersSpending1To5Min,
-        count(DISTINCT CASE WHEN sessionDuration > 300 THEN userId ELSE NULL END) AS usersSpendingMoreThan5Min
-        FROM (SELECT userId, category,
-                     unix_timestamp(cast(sessionEndTime AS TIMESTAMP)) -
-                     unix_timestamp(cast(sessionStartTime AS TIMESTAMP)) AS sessionDuration
-              FROM sessions
-              GROUP BY userId, category, sessionId, sessionDuration)
-        GROUP BY category""")
+    val percentile = spark.sql("""SELECT category,
+      percentile(sessionDuration, 0.5) / 60 AS medianSessionDurationInMinutes
+      FROM sessions GROUP BY category""")
+
+    percentile.createTempView("percentile")
+
+    val userDurations = spark.sql("""SELECT category, userId,
+      sum(sessionDuration) AS sumDuration
+      FROM sessions GROUP BY category, userId""")
+
+    userDurations.createTempView("userDurations")
+
+    val durations = spark.sql("""SELECT category,
+      count(CASE WHEN sumDuration < 60 THEN userId ELSE NULL END)
+        AS usersSpendingLessThan1Min,
+      count(CASE WHEN sumDuration BETWEEN 60 and 300 THEN userId ELSE NULL END)
+        AS usersSpending1To5Min,
+      count(CASE WHEN sumDuration > 300 THEN userId ELSE NULL END)
+        AS usersSpendingMoreThan5Min
+      FROM userDurations GROUP BY category""")
+
+    durations.createTempView("durations")
+
+    val statistics = spark.sql("""SELECT percentile.category,
+        medianSessionDurationInMinutes, usersSpendingLessThan1Min,
+        usersSpending1To5Min, usersSpendingMoreThan5Min
+      FROM percentile JOIN durations USING (category)""")
       .cache()
 
     statistics.write
