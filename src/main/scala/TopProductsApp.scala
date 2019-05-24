@@ -3,9 +3,9 @@
   * When particular user switches to another product the new session starts.</em>
   * Input example could be found at `data/example.csv`.
   *
-  * Input format: `category,product,userId,eventTime,eventType,sessionStartTime,sessionEndTime,sessionId`
+  * Input format: `category,product,userId,eventTime,eventType`
   *
-  * Output format: `product,durationInSeconds`
+  * Output format: `category,product,sumDurationInSeconds,productRank`
   */
 object TopProductsApp extends GenericApp {
 
@@ -28,26 +28,26 @@ object TopProductsApp extends GenericApp {
     eventsWithSessions.createTempView("eventsWithSessions")
 
     val sessions = spark.sql("""SELECT userId, category, product, sessionId,
-        unix_timestamp(max(eventTime)) - unix_timestamp(min(eventTime)) as duration
+      unix_timestamp(max(eventTime)) - unix_timestamp(min(eventTime)) as duration
       FROM eventsWithSessions GROUP BY userId, category, product, sessionId""")
 
     sessions.createTempView("sessions")
 
     val productDurations = spark.sql("""SELECT category, product,
-        sum(duration) as sumDurationInSeconds
+      sum(duration) as sumDurationInSeconds
       FROM sessions GROUP BY category, product""")
 
     productDurations.createTempView("productDurations")
 
-    val productRank = spark.sql("""SELECT category, product, sumDurationInSeconds,
-      row_number() OVER (PARTITION BY category ORDER BY sumDurationInSeconds DESC) AS rank
+    val productRanks = spark.sql("""SELECT category, product, sumDurationInSeconds,
+      row_number() OVER (PARTITION BY category ORDER BY sumDurationInSeconds DESC) AS productRank
       FROM productDurations""")
 
-    productRank.createTempView("productRank")
+    productRanks.createTempView("productRanks")
 
     val topProducts = spark.sql("""SELECT
-        category, product, sumDurationInSeconds, rank
-      FROM productRank WHERE rank <= 10""").cache()
+      category, product, sumDurationInSeconds, productRank
+      FROM productRanks WHERE productRank <= 10""").cache()
 
     topProducts.write
       .option("header", "true")
