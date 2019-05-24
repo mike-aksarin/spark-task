@@ -40,7 +40,7 @@ object TopProductsApp extends GenericApp {
     productDurations.createTempView("productDurations")
 
     val productRank = spark.sql("""SELECT category, product, sumDurationInSeconds,
-      dense_rank() OVER (PARTITION BY category ORDER BY sumDurationInSeconds DESC) AS rank
+      row_number() OVER (PARTITION BY category ORDER BY sumDurationInSeconds DESC) AS rank
       FROM productDurations""")
 
     productRank.createTempView("productRank")
