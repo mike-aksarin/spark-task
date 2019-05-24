@@ -1,10 +1,8 @@
 import java.io.{File, PrintWriter}
 import java.sql.Timestamp
 
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{LongType, StringType, StructType, TimestampType}
 
-import scala.io.StdIn
 import scala.util.Random
 
  /**  This is a simple app to ensure that [[TimeoutSessionId]] user-defined window function works properly for `UNBOUNDED PRECEDING AND CURRENT ROW` window.
@@ -37,7 +35,7 @@ object SimpleSessionApp extends GenericApp {
     val events = spark.read.schema(schema).csv(inputPath)
 
     events.createTempView("events")
-    spark.udf.register("session_id", new TimeoutSessionId(timeout))
+    spark.udf.register("session_id", new SimpleSessionId)
 
     val sessions = spark.sql("""SELECT *,
      session_id(eventTime) OVER (PARTITION BY userId ORDER BY eventTime
@@ -47,11 +45,9 @@ object SimpleSessionApp extends GenericApp {
     sessions.explain(true)
     sessions.write.option("header", "true").csv(outputPath)
 
-//    val loadedSessions = spark.read.option("header", "true").csv(outputPath)
-//    val count = loadedSessions.select("sessionId").distinct().count()
-//    loadedSessions.show(100)
-//    println(s"Number of sessions: $count")
-    StdIn.readLine()
+    val count = sessions.select("sessionId").distinct().count()
+    sessions.show(100)
+    println(s"Number of sessions: $count")
   }
 
   def generateRows(outputFilePath: String = "simple.100m.csv", numberOfRows: Int = 1 << 27) = {
